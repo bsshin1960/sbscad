@@ -156,10 +156,17 @@ class CADMainWindow(QMainWindow):
         self.help_label.setText(msg)
 
     def set_active_tool(self, active_action=None):
+        from PyQt6.QtWidgets import QToolBar
         for action in self.tool_actions:
             font = action.font()
             font.setBold(action == active_action)
             action.setFont(font)
+            
+            # Update the toolbar buttons directly since Qt sometimes ignores action font updates
+            for tb in self.findChildren(QToolBar):
+                widget = tb.widgetForAction(action)
+                if widget:
+                    widget.setFont(font)
             
         # If we switch to another tool or clear tools, cancel any pending interactive operations
         if hasattr(self, 'pending_operation') and self.pending_operation:
@@ -732,6 +739,7 @@ class CADMainWindow(QMainWindow):
             if ok2:
                 self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
                 self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
+                self.modeler.rebuild()
                 self.update_view()
                 self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
         self.set_active_tool(None)
@@ -744,6 +752,7 @@ class CADMainWindow(QMainWindow):
         if ok:
             self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
             self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
+            self.modeler.rebuild()
             self.update_view()
             self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원을 스케치했습니다.")
         self.set_active_tool(None)
