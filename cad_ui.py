@@ -733,29 +733,39 @@ class CADMainWindow(QMainWindow):
         plane_param = self.get_plane_param()
         if not plane_param: return
         self.set_active_tool(self.action_rect)
-        w, ok1 = QInputDialog.getDouble(self, "Sketch Rectangle", "Width (X):", 10.0, 0.1, 1000.0, 2)
-        if ok1:
-            h, ok2 = QInputDialog.getDouble(self, "Sketch Rectangle", "Height (Y):", 10.0, 0.1, 1000.0, 2)
-            if ok2:
-                self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
-                self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
-                self.modeler.rebuild()
-                self.update_view()
-                self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
-        self.set_active_tool(None)
+        
+        def show_dialogs():
+            w, ok1 = QInputDialog.getDouble(self, "Sketch Rectangle", "Width (X):", 10.0, 0.1, 1000.0, 2)
+            if ok1:
+                h, ok2 = QInputDialog.getDouble(self, "Sketch Rectangle", "Height (Y):", 10.0, 0.1, 1000.0, 2)
+                if ok2:
+                    self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
+                    self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
+                    self.modeler.rebuild()
+                    self.update_view()
+                    self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
+            self.set_active_tool(None)
+            
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, show_dialogs)
 
     def cmd_circle(self):
         plane_param = self.get_plane_param()
         if not plane_param: return
         self.set_active_tool(self.action_circle)
-        r, ok = QInputDialog.getDouble(self, "Sketch Circle", "Radius:", 5.0, 0.1, 1000.0, 2)
-        if ok:
-            self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
-            self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
-            self.modeler.rebuild()
-            self.update_view()
-            self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원을 스케치했습니다.")
-        self.set_active_tool(None)
+        
+        def show_dialog():
+            r, ok = QInputDialog.getDouble(self, "Sketch Circle", "Radius:", 5.0, 0.1, 1000.0, 2)
+            if ok:
+                self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
+                self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
+                self.modeler.rebuild()
+                self.update_view()
+                self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원 스케치를 생성했습니다.")
+            self.set_active_tool(None)
+            
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, show_dialog)
             
     def cmd_line(self):
         plane_param = self.get_plane_param()
