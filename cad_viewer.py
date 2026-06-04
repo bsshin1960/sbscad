@@ -114,13 +114,21 @@ class CADViewer(QWidget):
 
     def enable_interactive_trim(self, callback):
         self.trim_callback = callback
+        self._last_hovered_actor = None
         
-        def _on_pick(picked_point):
-            if picked_point is not None and len(picked_point) == 3:
-                if self.trim_callback:
-                    self.trim_callback(picked_point)
-                    
-        self.plotter.enable_surface_point_picking(callback=_on_pick, show_message=False, left_clicking=True, show_point=False)
+        def _on_trim_left_click(obj, event):
+            if not self.trim_callback:
+                return
+            click_pos = self.plotter.iren.get_event_position()
+            import vtk
+            picker = vtk.vtkPropPicker()
+            picker.Pick(click_pos[0], click_pos[1], 0, self.plotter.renderer)
+            actor = picker.GetActor()
+            if actor:
+                pt = picker.GetPickPosition()
+                self.trim_callback(pt)
+
+        self._trim_left_click_observer = self.plotter.iren.add_observer("LeftButtonPressEvent", _on_trim_left_click)
         self._trim_right_click_observer = self.plotter.iren.add_observer("RightButtonPressEvent", self._on_trim_right_click)
         self._trim_move_observer = self.plotter.iren.add_observer("MouseMoveEvent", self._on_trim_move)
 
@@ -132,14 +140,24 @@ class CADViewer(QWidget):
             picker.Pick(click_pos[0], click_pos[1], 0, self.plotter.renderer)
             actor = picker.GetActor()
             
+            # Avoid rendering recursively if hovered actor hasn't changed
+            if getattr(self, '_last_hovered_actor', None) == actor:
+                return
+            self._last_hovered_actor = actor
+            
             original_color = getattr(self, 'brep_edge_color', 'blue')
+            changed = False
             for name, a in list(self.plotter.actors.items()):
                 if name.startswith("brep_edge_"):
                     if a == actor:
                         a.prop.color = "red"
+                        changed = True
                     else:
-                        a.prop.color = original_color
-            self.plotter.render()
+                        if a.prop.color != original_color:
+                            a.prop.color = original_color
+                            changed = True
+            if changed:
+                self.plotter.render()
         except Exception as e:
             print("Trim hover error:", e)
 
@@ -151,6 +169,9 @@ class CADViewer(QWidget):
                 cb(None)
 
     def disable_interactive_trim(self):
+        if hasattr(self, '_trim_left_click_observer'):
+            self.plotter.iren.remove_observer(self._trim_left_click_observer)
+            del self._trim_left_click_observer
         if hasattr(self, '_trim_right_click_observer'):
             self.plotter.iren.remove_observer(self._trim_right_click_observer)
             del self._trim_right_click_observer
@@ -160,12 +181,15 @@ class CADViewer(QWidget):
             
         # Reset color
         original_color = getattr(self, 'brep_edge_color', 'blue')
-        for name, a in self.plotter.actors.items():
+        changed = False
+        for name, a in list(self.plotter.actors.items()):
             if name.startswith("brep_edge_"):
-                a.prop.color = original_color
-        self.plotter.render()
+                if a.prop.color != original_color:
+                    a.prop.color = original_color
+                    changed = True
+        if changed:
+            self.plotter.render()
         
-        self.plotter.disable_picking()
         self.trim_callback = None
 
     def enable_interactive_pad(self, center, normal, initial_distance, callback):
