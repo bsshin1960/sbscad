@@ -632,13 +632,17 @@ class CADMainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: process_trim(pt))
             
         def process_trim(pt):
-            success = self.modeler.trim_sketch_nearest(pt)
-            if success:
-                self.update_tree("Trim (Nearest)")
-                self.update_view()
-                self.set_help("선이 잘렸습니다. 계속해서 자를 선을 클릭하세요.")
-            else:
-                self.set_help("클릭한 위치 근처에 자를 선이 없습니다.")
+            try:
+                success = self.modeler.trim_sketch_nearest(pt)
+                if success:
+                    self.update_view()
+                    self.set_help("선이 잘렸습니다. 계속해서 자를 선을 클릭하세요.")
+                else:
+                    self.set_help("클릭한 위치 근처에 자를 선이 없습니다.")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self.set_help(f"오류가 발생했습니다: {e}")
                 
         self.viewport.enable_interactive_trim(on_trim_click)
 

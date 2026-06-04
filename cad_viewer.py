@@ -125,20 +125,23 @@ class CADViewer(QWidget):
         self._trim_move_observer = self.plotter.iren.add_observer("MouseMoveEvent", self._on_trim_move)
 
     def _on_trim_move(self, obj, event):
-        click_pos = self.plotter.iren.get_event_position()
-        import vtk
-        picker = vtk.vtkPropPicker()
-        picker.Pick(click_pos[0], click_pos[1], 0, self.plotter.renderer)
-        actor = picker.GetActor()
-        
-        original_color = getattr(self, 'brep_edge_color', 'blue')
-        for name, a in self.plotter.actors.items():
-            if name.startswith("brep_edge_"):
-                if a == actor:
-                    a.prop.color = "red"
-                else:
-                    a.prop.color = original_color
-        self.plotter.render()
+        try:
+            click_pos = self.plotter.iren.get_event_position()
+            import vtk
+            picker = vtk.vtkPropPicker()
+            picker.Pick(click_pos[0], click_pos[1], 0, self.plotter.renderer)
+            actor = picker.GetActor()
+            
+            original_color = getattr(self, 'brep_edge_color', 'blue')
+            for name, a in list(self.plotter.actors.items()):
+                if name.startswith("brep_edge_"):
+                    if a == actor:
+                        a.prop.color = "red"
+                    else:
+                        a.prop.color = original_color
+            self.plotter.render()
+        except Exception as e:
+            print("Trim hover error:", e)
 
     def _on_trim_right_click(self, obj, event):
         if hasattr(self, 'trim_callback'):
