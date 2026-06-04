@@ -148,7 +148,7 @@ class CADMainWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         if hasattr(self, 'right_dock'):
-            self.resizeDocks([self.dock, self.right_dock], [180, 240], Qt.Orientation.Horizontal)
+            self.resizeDocks([self.dock, self.right_dock], [180, 100], Qt.Orientation.Horizontal)
         else:
             self.resizeDocks([self.dock], [180], Qt.Orientation.Horizontal)
 
@@ -285,7 +285,6 @@ class CADMainWindow(QMainWindow):
         self.right_dock = QDockWidget("Tools", self)
         self.right_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self.right_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable | QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        self.right_dock.setMinimumWidth(240)
         
         tools_widget = QWidget()
         dock_layout = QVBoxLayout(tools_widget)
