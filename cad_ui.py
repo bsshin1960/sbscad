@@ -628,6 +628,10 @@ class CADMainWindow(QMainWindow):
                 self.set_active_tool(None)
                 return
                 
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: process_trim(pt))
+            
+        def process_trim(pt):
             success = self.modeler.trim_sketch_nearest(pt)
             if success:
                 self.update_tree("Trim (Nearest)")
