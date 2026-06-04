@@ -280,7 +280,13 @@ class CADModeler:
             import numpy as np
             points_list = []
             
-            all_edges = self.result_shape.edges().vals()
+            all_edges = []
+            try:
+                # Some operations without solid bodies might fail when getting edges
+                all_edges.extend(self.result_shape.edges().vals())
+            except:
+                pass
+                
             if hasattr(self.result_shape, 'ctx') and self.result_shape.ctx:
                 all_edges.extend(self.result_shape.ctx.pendingEdges)
                 for w in self.result_shape.ctx.pendingWires:
