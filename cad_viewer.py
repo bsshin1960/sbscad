@@ -62,6 +62,8 @@ class CADViewer(QWidget):
             self.plotter.view_yz()
         elif plane == "ZX":
             self.plotter.view_xz()
+        elif plane == "XYZ":
+            self.plotter.view_isometric()
         self.plotter.render()
         
     def view_front(self):

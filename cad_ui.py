@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QMessageBox, QLabel, QComboBox, QFileDialog,
     QDialog, QDoubleSpinBox, QPushButton, QFrame, QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QStandardItemModel, QStandardItem
 from cad_viewer import CADViewer
 from cad_modeler import CADModeler
@@ -66,11 +66,15 @@ class SelectionModeWidget(QWidget):
             self.btn_edge.setChecked(True)
 
 class RevolveDialog(QDialog):
-    def __init__(self, parent=None, title="Revolve", default_angle=360.0):
+    def __init__(self, parent=None, title="Revolve", default_angle=360.0, on_ok=None, on_cancel=None):
         super().__init__(parent)
         self.setWindowTitle(title)
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.angle = default_angle
         self.axis = "Y"
+        self.on_ok = on_ok
+        self.on_cancel = on_cancel
         
         layout = QVBoxLayout(self)
         
@@ -107,6 +111,52 @@ class RevolveDialog(QDialog):
         self.angle = self.angle_spin.value()
         self.axis = "X" if self.radio_x.isChecked() else "Y"
         super().accept()
+        if self.on_ok: self.on_ok(self.angle, self.axis)
+        
+    def reject(self):
+        super().reject()
+        if self.on_cancel: self.on_cancel()
+
+class NonModalInputDialog(QDialog):
+    def __init__(self, parent=None, title="Input", labels=["Value:"], defaults=[0.0], on_ok=None, on_cancel=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        
+        layout = QVBoxLayout(self)
+        self.spinboxes = []
+        for label, default in zip(labels, defaults):
+            hlayout = QHBoxLayout()
+            hlayout.addWidget(QLabel(label))
+            spinbox = QDoubleSpinBox()
+            spinbox.setRange(0.1, 10000.0)
+            spinbox.setDecimals(2)
+            spinbox.setValue(default)
+            hlayout.addWidget(spinbox)
+            layout.addLayout(hlayout)
+            self.spinboxes.append(spinbox)
+            
+        btn_layout = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_cancel = QPushButton("Cancel")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_ok)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+        
+        self.on_ok = on_ok
+        self.on_cancel = on_cancel
+        
+    def accept(self):
+        values = [sb.value() for sb in self.spinboxes]
+        super().accept()
+        if self.on_ok: self.on_ok(values)
+            
+    def reject(self):
+        super().reject()
+        if self.on_cancel: self.on_cancel()
 
 class InteractivePadDialog(QDialog):
     def __init__(self, parent=None, initial_distance=10.0, callback=None, on_ok=None, on_cancel=None):
@@ -191,14 +241,122 @@ class CADMainWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         if hasattr(self, 'right_dock'):
-            self.resizeDocks([self.dock, self.right_dock], [180, 100], Qt.Orientation.Horizontal)
+            self.resizeDocks([self.dock, self.right_dock], [180, 80], Qt.Orientation.Horizontal)
         else:
             self.resizeDocks([self.dock], [180], Qt.Orientation.Horizontal)
 
     def set_help(self, msg):
         self.help_label.setText(msg)
 
+    def show_warning(self, title, text):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setWindowModality(Qt.WindowModality.NonModal)
+        msg.show()
+        if not hasattr(self, '_msg_boxes'): self._msg_boxes = []
+        self._msg_boxes.append(msg)
+
+    def clear_tool_options(self):
+        for i in reversed(range(self.tool_options_layout.count())):
+            item = self.tool_options_layout.itemAt(i)
+            if item.widget():
+                item.widget().setParent(None)
+
+    def show_tool_options(self, title, labels, defaults, on_ok, on_cancel):
+        self.clear_tool_options()
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 5, 0, 0)
+        
+        layout.addWidget(QLabel(f"<b>{title}</b>"))
+        
+        spinboxes = []
+        for label_text, default_val in zip(labels, defaults):
+            layout.addWidget(QLabel(label_text))
+            sb = QDoubleSpinBox()
+            sb.setRange(-10000, 10000)
+            sb.setMinimumWidth(60)
+            sb.setValue(default_val)
+            layout.addWidget(sb)
+            spinboxes.append(sb)
+            
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("Cancel")
+        ok_btn.setMinimumWidth(40)
+        cancel_btn.setMinimumWidth(40)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        def handle_ok():
+            vals = [sb.value() for sb in spinboxes]
+            self.clear_tool_options()
+            if on_ok: on_ok(vals)
+            
+        def handle_cancel():
+            self.clear_tool_options()
+            if on_cancel: on_cancel()
+            
+        ok_btn.clicked.connect(handle_ok)
+        cancel_btn.clicked.connect(handle_cancel)
+        
+        self.tool_options_layout.addWidget(widget)
+
+    def show_revolve_options(self, title, on_ok, on_cancel):
+        self.clear_tool_options()
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 5, 0, 0)
+        
+        layout.addWidget(QLabel(f"<b>{title}</b>"))
+        
+        layout.addWidget(QLabel("Angle (deg):"))
+        sb = QDoubleSpinBox()
+        sb.setRange(-360, 360)
+        sb.setMinimumWidth(60)
+        sb.setValue(360.0)
+        layout.addWidget(sb)
+        
+        layout.addWidget(QLabel("Axis of Revolution:"))
+        axis_group = QButtonGroup(widget)
+        radio_x = QRadioButton("X Axis")
+        radio_y = QRadioButton("Y Axis")
+        radio_x.setChecked(True)
+        axis_group.addButton(radio_x)
+        axis_group.addButton(radio_y)
+        layout.addWidget(radio_x)
+        layout.addWidget(radio_y)
+        
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("Cancel")
+        ok_btn.setMinimumWidth(40)
+        cancel_btn.setMinimumWidth(40)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        def handle_ok():
+            angle = sb.value()
+            axis = "X" if radio_x.isChecked() else "Y"
+            self.clear_tool_options()
+            if on_ok: on_ok(angle, axis)
+            
+        def handle_cancel():
+            self.clear_tool_options()
+            if on_cancel: on_cancel()
+            
+        ok_btn.clicked.connect(handle_ok)
+        cancel_btn.clicked.connect(handle_cancel)
+        
+        self.tool_options_layout.addWidget(widget)
+
     def set_active_tool(self, active_action=None):
+        if active_action is None:
+            self.clear_tool_options()
         for action in self.tool_actions:
             if action.isCheckable():
                 action.setChecked(action == active_action)
@@ -210,7 +368,7 @@ class CADMainWindow(QMainWindow):
             
         # Also cancel interactive sketch if active and we switch tools
         if active_action != self.action_line and hasattr(self.viewport, 'disable_interactive_sketch_line'):
-            if self.viewport.sketch_line_callback is not None:
+            if getattr(self.viewport, 'sketch_line_callback', None) is not None:
                 self.viewport.disable_interactive_sketch_line()
 
         # Cancel interactive trim
@@ -246,10 +404,15 @@ class CADMainWindow(QMainWindow):
         self.action_chamfer = QAction("Chamfer", self)
         self.action_chamfer.setCheckable(True)
         self.action_chamfer.triggered.connect(self.cmd_chamfer)
+        
+        self.action_trim_nearest = QAction("Trim Nearest", self)
+        self.action_trim_nearest.setCheckable(True)
+        self.action_trim_nearest.triggered.connect(self.cmd_trim_nearest)
 
         self.tool_actions = [
             self.action_line, self.action_circle, self.action_rect,
-            self.action_pad, self.action_extrucut, self.action_revolve, self.action_revolcut, self.action_fillet, self.action_chamfer
+            self.action_pad, self.action_extrucut, self.action_revolve, self.action_revolcut, self.action_fillet, self.action_chamfer,
+            self.action_trim_nearest
         ]
 
         menubar = self.menuBar()
@@ -303,9 +466,7 @@ class CADMainWindow(QMainWindow):
         edit_menu.addAction(action_redo)
 
         trim_menu = edit_menu.addMenu("Trim")
-        action_trim_nearest = QAction("Trim Nearest", self)
-        action_trim_nearest.triggered.connect(self.cmd_trim_nearest)
-        trim_menu.addAction(action_trim_nearest)
+        trim_menu.addAction(self.action_trim_nearest)
 
         insert_menu = menubar.addMenu("Insert")
         
@@ -317,6 +478,8 @@ class CADMainWindow(QMainWindow):
         pad_menu = insert_menu.addMenu("Solid")
         pad_menu.addAction(self.action_pad)
         pad_menu.addAction(self.action_revolve)
+        pad_menu.addAction(self.action_extrucut)
+        pad_menu.addAction(self.action_revolcut)
         pad_menu.addAction(self.action_fillet)
         pad_menu.addAction(self.action_chamfer)
 
@@ -355,8 +518,9 @@ class CADMainWindow(QMainWindow):
         self.right_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetFloatable | QDockWidget.DockWidgetFeature.DockWidgetMovable)
         
         tools_widget = QWidget()
+        tools_widget.setMinimumWidth(90)
         dock_layout = QVBoxLayout(tools_widget)
-        dock_layout.setContentsMargins(5, 5, 5, 5)
+        dock_layout.setContentsMargins(2, 2, 2, 2)
         dock_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
         # --- Sketch Plane & Selection Area ---
@@ -416,13 +580,27 @@ class CADMainWindow(QMainWindow):
         feat_dock_toolbar.setStyleSheet(active_tool_css)
         feat_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
         feat_dock_toolbar.addAction(self.action_pad)
-        feat_dock_toolbar.addAction(self.action_extrucut)
         feat_dock_toolbar.addAction(self.action_revolve)
+        feat_dock_toolbar.addAction(self.action_extrucut)
         feat_dock_toolbar.addAction(self.action_revolcut)
         feat_dock_toolbar.addAction(self.action_fillet)
         feat_dock_toolbar.addAction(self.action_chamfer)
         feat_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         dock_layout.addWidget(feat_dock_toolbar)
+        
+        dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
+        
+        edit_dock_toolbar = QToolBar("Edit")
+        edit_dock_toolbar.setStyleSheet(active_tool_css)
+        edit_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
+        edit_dock_toolbar.addAction(self.action_trim_nearest)
+        edit_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        dock_layout.addWidget(edit_dock_toolbar)
+        
+        dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
+        self.tool_options_layout = QVBoxLayout()
+        dock_layout.addLayout(self.tool_options_layout)
+        dock_layout.addStretch()
         
         self.right_dock.setWidget(tools_widget)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.right_dock)
@@ -680,7 +858,7 @@ class CADMainWindow(QMainWindow):
                     self.update_tree(op['type'])
                 self.set_help("프로젝트를 성공적으로 불러왔습니다.")
             else:
-                QMessageBox.warning(self, "오류", "프로젝트를 불러오는데 실패했습니다.")
+                self.show_warning("오류", "프로젝트를 불러오는데 실패했습니다.")
 
     def cmd_close(self):
         self.modeler.operations = []
@@ -758,7 +936,7 @@ class CADMainWindow(QMainWindow):
             if self.modeler.save_project(file_path):
                 self.set_help("프로젝트가 성공적으로 저장되었습니다.")
             else:
-                QMessageBox.warning(self, "오류", "프로젝트 저장에 실패했습니다.")
+                self.show_warning("오류", "프로젝트 저장에 실패했습니다.")
 
     def cmd_import_step(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Import STEP", "", "STEP Files (*.step *.stp)")
@@ -769,7 +947,7 @@ class CADMainWindow(QMainWindow):
                 self.update_tree("Import STEP")
                 self.set_help("STEP 파일이 성공적으로 불러와졌습니다.")
             else:
-                QMessageBox.warning(self, "오류", "STEP 파일을 불러오는데 실패했습니다.")
+                self.show_warning("오류", "STEP 파일을 불러오는데 실패했습니다.")
 
     def cmd_export_step(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Export STEP", "", "STEP Files (*.step *.stp)")
@@ -780,7 +958,7 @@ class CADMainWindow(QMainWindow):
             if success:
                 self.set_help("STEP 파일이 성공적으로 저장되었습니다.")
             else:
-                QMessageBox.warning(self, "오류", "STEP 파일 저장에 실패했습니다. 모델이 있는지 확인하세요.")
+                self.show_warning("오류", "STEP 파일 저장에 실패했습니다. 모델이 있는지 확인하세요.")
 
     def cmd_export_snapshot(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save Snapshot", "", "PNG Image (*.png);;JPEG Image (*.jpg);;BMP Image (*.bmp)")
@@ -789,16 +967,18 @@ class CADMainWindow(QMainWindow):
                 self.viewport.plotter.screenshot(file_path)
                 self.set_help(f"스냅샷이 저장되었습니다: {file_path}")
             except Exception as e:
-                QMessageBox.critical(self, "오류", f"스냅샷 저장에 실패했습니다:\n{str(e)}")
+                self.show_warning("오류", f"스냅샷 저장에 실패했습니다:\n{str(e)}")
 
     def get_plane_param(self):
         if self.current_plane == "Face":
             if not getattr(self, 'selected_sketch_face_pt', None):
-                QMessageBox.warning(self, "안내", "스케치할 면(Face)을 3D 화면에서 먼저 클릭하여 선택해주세요.")
+                self.set_active_tool(None)
+                self.show_warning("안내", "스케치 평면(Face)을 3D 화면에서 먼저 클릭하여 지정해주세요.")
                 return None
             return {"type": "Face", "point": self.selected_sketch_face_pt}
         elif self.current_plane == "XYZ":
-            QMessageBox.warning(self, "안내", "XYZ 좌표계는 3D 뷰잉 모드입니다.\n스케치를 하려면 먼저 XY, YZ, ZX 또는 Face 평면을 선택해주세요.")
+            self.set_active_tool(None)
+            self.show_warning("안내", "XYZ 좌표계는 3D 뷰잉 모드입니다.\n스케치를 하려면 먼저 XY, YZ, ZX 또는 Face 평면을 선택해주세요.")
             return None
         return self.current_plane
 
@@ -807,30 +987,38 @@ class CADMainWindow(QMainWindow):
         if not plane_param: return
         self.set_active_tool(self.action_rect)
         
-        w, ok1 = QInputDialog.getDouble(None, "Sketch Rectangle", "Width (X):", 10.0, 0.1, 1000.0, 2)
-        if ok1:
-            h, ok2 = QInputDialog.getDouble(None, "Sketch Rectangle", "Height (Y):", 10.0, 0.1, 1000.0, 2)
-            if ok2:
-                self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
-                self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
-                self.modeler.rebuild()
-                self.update_view()
-                self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
-        self.set_active_tool(None)
+        def on_ok(values):
+            w, h = values
+            self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
+            self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
+            self.modeler.rebuild()
+            self.update_view()
+            self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
+            self.set_active_tool(None)
+            
+        def on_cancel():
+            self.set_active_tool(None)
+            
+        self.show_tool_options("Sketch Rectangle", ["Width (X):", "Height (Y):"], [10.0, 10.0], on_ok, on_cancel)
 
     def cmd_circle(self):
         plane_param = self.get_plane_param()
         if not plane_param: return
         self.set_active_tool(self.action_circle)
         
-        r, ok = QInputDialog.getDouble(None, "Sketch Circle", "Radius:", 5.0, 0.1, 1000.0, 2)
-        if ok:
+        def on_ok(values):
+            r = values[0]
             self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
             self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
             self.modeler.rebuild()
             self.update_view()
             self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원 스케치를 생성했습니다.")
-        self.set_active_tool(None)
+            self.set_active_tool(None)
+            
+        def on_cancel():
+            self.set_active_tool(None)
+            
+        self.show_tool_options("Sketch Circle", ["Radius:"], [5.0], on_ok, on_cancel)
             
     def cmd_line(self):
         plane_param = self.get_plane_param()
@@ -889,7 +1077,7 @@ class CADMainWindow(QMainWindow):
             self.set_active_tool(None)
             if d == 0:
                 self.modeler.operations.pop()
-                QMessageBox.warning(self, "안내", "돌출 두께는 0이 될 수 없습니다.")
+                self.show_warning("안내", "돌출 두께는 0이 될 수 없습니다.")
                 self.modeler.rebuild()
                 self.update_view()
                 return
@@ -913,8 +1101,8 @@ class CADMainWindow(QMainWindow):
             
     def cmd_extrucut(self):
         self.set_active_tool(self.action_extrucut)
-        d, ok = QInputDialog.getDouble(None, "Extrude Cut", "Distance:", 10.0, 0.1, 1000.0, 2)
-        if ok:
+        def on_ok(values):
+            d = values[0]
             self.modeler.add_operation("extru_cut", distance=d)
             success = self.modeler.rebuild()
             if not success:
@@ -925,68 +1113,79 @@ class CADMainWindow(QMainWindow):
                 self.update_tree(f"ExtruCut ({d}mm)")
                 self.update_view()
                 self.set_help(f"돌출 컷({d}mm)을 적용했습니다.")
-        self.set_active_tool(None)
+            self.set_active_tool(None)
+        self.active_dialog = NonModalInputDialog(None, "Extrude Cut", ["Distance:"], [10.0], on_ok, lambda: self.set_active_tool(None))
+        QTimer.singleShot(100, self.active_dialog.show)
 
     def cmd_revolve(self):
         self.set_active_tool(self.action_revolve)
-        dialog = RevolveDialog(self, title="Revolve")
-        if dialog.exec():
-            self.modeler.add_operation("revolve", angle=dialog.angle, axis=dialog.axis)
+        def on_ok(angle, axis):
+            self.modeler.add_operation("revolve", angle=angle, axis=axis)
             success = self.modeler.rebuild()
             if not success:
                 self.set_help("오류: 유효한 스케치가 없거나 닫힌 선(Close Line)이 아닙니다.")
                 self.modeler.undo()
                 self.update_view()
             else:
-                self.update_tree(f"Revolve ({dialog.axis}-Axis, {dialog.angle}deg)")
+                self.update_tree(f"Revolve ({axis}-Axis, {angle}deg)")
                 self.update_view()
-                self.set_help(f"스케치를 {dialog.axis}축을 중심으로 {dialog.angle}도 회전했습니다.")
-        self.set_active_tool(None)
+                self.set_help(f"스케치를 {axis}축을 중심으로 {angle}도 회전했습니다.")
+            self.set_active_tool(None)
+        self.active_dialog = RevolveDialog(None, title="Revolve", on_ok=on_ok, on_cancel=lambda: self.set_active_tool(None))
+        QTimer.singleShot(100, self.active_dialog.show)
 
     def cmd_revolcut(self):
         self.set_active_tool(self.action_revolcut)
-        dialog = RevolveDialog(self, title="RevolCut")
-        if dialog.exec():
-            self.modeler.add_operation("revol_cut", angle=dialog.angle, axis=dialog.axis)
+        def on_ok(angle, axis):
+            self.modeler.add_operation("revol_cut", angle=angle, axis=axis)
             success = self.modeler.rebuild()
             if not success:
                 self.set_help("오류: 유효한 스케치가 없거나 닫힌 선(Close Line)이 아닙니다.")
                 self.modeler.undo()
                 self.update_view()
             else:
-                self.update_tree(f"RevolCut ({dialog.axis}-Axis, {dialog.angle}deg)")
+                self.update_tree(f"RevolCut ({axis}-Axis, {angle}deg)")
                 self.update_view()
-                self.set_help(f"스케치를 {dialog.axis}축을 중심으로 회전 컷({dialog.angle}도) 적용했습니다.")
-        self.set_active_tool(None)
+                self.set_help(f"스케치를 {axis}축을 중심으로 회전 컷({angle}도) 적용했습니다.")
+            self.set_active_tool(None)
+        self.active_dialog = RevolveDialog(None, title="RevolCut", on_ok=on_ok, on_cancel=lambda: self.set_active_tool(None))
+        QTimer.singleShot(100, self.active_dialog.show)
 
     def cmd_fillet(self):
         self.set_active_tool(self.action_fillet)
-        r, ok = QInputDialog.getDouble(None, "Edge Fillet", "Radius:", 2.0, 0.1, 1000.0, 2)
-        if ok:
+        def on_ok(values):
+            r = values[0]
             if getattr(self, 'selected_points', []):
                 self.modeler.add_operation("fillet", radius=r, points=self.selected_points.copy())
                 self.update_tree(f"EdgeFillet (R={r})")
                 self.selected_points = []
                 self.update_view()
-                self.set_help(f"방금 라운드(R={r})를 실행했습니다.")
+                self.set_help(f"선택한 모서리에 라운드(R={r}) 처리를 했습니다.")
             else:
                 self.pending_operation = {"type": "fillet", "radius": r}
                 self.selection_mode_combo.setCurrentText("Edge")
                 self.set_help(f"라운드(R={r})를 적용할 선(Edge)을 화면에서 클릭하세요.")
+            self.set_active_tool(None)
+        self.active_dialog = NonModalInputDialog(None, "Edge Fillet", ["Radius:"], [2.0], on_ok, lambda: self.set_active_tool(None))
+        QTimer.singleShot(100, self.active_dialog.show)
             
     def cmd_chamfer(self):
-        d, ok = QInputDialog.getDouble(None, "Chamfer", "Distance:", 2.0, 0.1, 1000.0, 2)
-        if ok:
+        self.set_active_tool(self.action_chamfer)
+        def on_ok(values):
+            d = values[0]
             if getattr(self, 'selected_points', []):
                 self.modeler.add_operation("chamfer", distance=d, points=self.selected_points.copy())
                 self.update_tree(f"Chamfer (D={d})")
                 self.selected_points = []
                 self.update_view()
-                self.set_help(f"방금 모따기(D={d})를 실행했습니다.")
+                self.set_help(f"선택한 모서리에 모따기(D={d}) 처리를 했습니다.")
             else:
                 self.pending_operation = {"type": "chamfer", "distance": d}
                 self.selection_mode_combo.setCurrentText("Edge")
                 self.set_help(f"모따기(D={d})를 적용할 선(Edge)을 화면에서 클릭하세요.")
+            self.set_active_tool(None)
+        self.active_dialog = NonModalInputDialog(None, "Chamfer", ["Distance:"], [2.0], on_ok, lambda: self.set_active_tool(None))
+        QTimer.singleShot(100, self.active_dialog.show)
 
     def cmd_fit_all(self):
         self.viewport.fit_all()
