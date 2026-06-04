@@ -260,29 +260,7 @@ class CADMainWindow(QMainWindow):
         action_iso.triggered.connect(self.viewport.view_iso)
         view_menu.addAction(action_iso)
 
-        sketch_toolbar = QToolBar("Sketch Toolbar")
-        self.addToolBar(Qt.ToolBarArea.RightToolBarArea, sketch_toolbar)
-        
         self.view_menu.addSeparator()
-        self.view_menu.addAction(sketch_toolbar.toggleViewAction())
-        
-        sketch_toolbar.addWidget(QLabel(" Sketch: "))
-        self.plane_btns = {}
-        for p in ["XY", "YZ", "ZX", "Face"]:
-            btn = PlaneButton(p, self.on_plane_changed)
-            if p == "XY":
-                btn.is_active = True
-                btn.update_style()
-            self.plane_btns[p] = btn
-            sketch_toolbar.addWidget(btn)
-        
-        sketch_toolbar.addSeparator()
-        
-        sketch_toolbar.addWidget(QLabel(" Selection:"))
-        self.selection_mode_combo = QComboBox()
-        self.selection_mode_combo.addItems(["Edge", "Face"])
-        sketch_toolbar.addWidget(self.selection_mode_combo)
-        sketch_toolbar.addSeparator()
         
         self.right_dock = QDockWidget("Tools", self)
         self.right_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
@@ -293,6 +271,32 @@ class CADMainWindow(QMainWindow):
         dock_layout = QVBoxLayout(tools_widget)
         dock_layout.setContentsMargins(5, 5, 5, 5)
         dock_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        
+        # --- Sketch Plane & Selection Area ---
+        top_layout = QVBoxLayout()
+        
+        plane_layout = QHBoxLayout()
+        plane_layout.addWidget(QLabel("Sketch:"))
+        self.plane_btns = {}
+        for p in ["XY", "YZ", "ZX", "Face"]:
+            btn = PlaneButton(p, self.on_plane_changed)
+            if p == "XY":
+                btn.is_active = True
+                btn.update_style()
+            self.plane_btns[p] = btn
+            plane_layout.addWidget(btn)
+        top_layout.addLayout(plane_layout)
+        
+        sel_layout = QHBoxLayout()
+        sel_layout.addWidget(QLabel("Selection:"))
+        self.selection_mode_combo = QComboBox()
+        self.selection_mode_combo.addItems(["Edge", "Face"])
+        sel_layout.addWidget(self.selection_mode_combo)
+        sel_layout.addStretch()
+        top_layout.addLayout(sel_layout)
+        
+        dock_layout.addLayout(top_layout)
+        dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
         
         sketch_dock_toolbar = QToolBar("Sketch")
         sketch_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
