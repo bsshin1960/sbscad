@@ -135,6 +135,22 @@ class CADMainWindow(QMainWindow):
     def set_help(self, msg):
         self.help_label.setText(msg)
 
+    def set_active_tool(self, active_action=None):
+        for action in self.tool_actions:
+            font = action.font()
+            font.setBold(action == active_action)
+            action.setFont(font)
+            
+        # If we switch to another tool or clear tools, cancel any pending interactive operations
+        if hasattr(self, 'pending_operation') and self.pending_operation:
+            self.pending_operation = None
+            self.set_help("명령이 취소되었습니다.")
+            
+        # Also cancel interactive sketch if active and we switch tools
+        if active_action != self.action_line and hasattr(self.viewport, 'disable_interactive_sketch_line'):
+            if self.viewport.sketch_line_callback is not None:
+                self.viewport.disable_interactive_sketch_line()
+
     def init_menu(self):
         self.action_line = QAction("Line", self)
         self.action_line.triggered.connect(self.cmd_line)
@@ -156,22 +172,6 @@ class CADMainWindow(QMainWindow):
             self.action_line, self.action_circle, self.action_rect,
             self.action_pad, self.action_revolve, self.action_fillet, self.action_chamfer
         ]
-
-    def set_active_tool(self, active_action=None):
-        for action in self.tool_actions:
-            font = action.font()
-            font.setBold(action == active_action)
-            action.setFont(font)
-            
-        # If we switch to another tool or clear tools, cancel any pending interactive operations
-        if hasattr(self, 'pending_operation') and self.pending_operation:
-            self.pending_operation = None
-            self.set_help("명령이 취소되었습니다.")
-            
-        # Also cancel interactive sketch if active and we switch tools
-        if active_action != self.action_line and hasattr(self.viewport, 'disable_interactive_sketch_line'):
-            if self.viewport.sketch_line_callback is not None:
-                self.viewport.disable_interactive_sketch_line()
 
         menubar = self.menuBar()
 
