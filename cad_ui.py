@@ -561,6 +561,8 @@ class CADMainWindow(QMainWindow):
             finally:
                 if os.path.exists(temp_file.name):
                     os.unlink(temp_file.name)
+            
+            self.viewport.plotter.render()
 
     # --- Commands ---
     def new_model(self):
@@ -718,7 +720,8 @@ class CADMainWindow(QMainWindow):
             self.modeler.add_operation("sketch_line", points=pts, plane=plane_param)
             self.update_tree(f"Sketch (Line on {self.current_plane})")
             self.update_view()
-            self.set_help("직선 스케치가 완료되었습니다.")
+            self.set_active_tool(None)
+            self.set_help("선 스케치가 완료되었습니다.")
             
         self.viewport.enable_interactive_sketch_line(origin, normal, on_line_drawn)
         self.set_help("점들을 클릭하여 선을 그리고, 마우스 우클릭으로 마칩니다.")
