@@ -233,6 +233,7 @@ class CADMainWindow(QMainWindow):
         pad_menu.addAction(self.action_chamfer)
 
         view_menu = menubar.addMenu("View")
+        self.view_menu = view_menu
         action_reset = QAction("Reset View", self)
         action_reset.triggered.connect(lambda: self.viewport.plotter.reset_camera())
         view_menu.addAction(action_reset)
@@ -261,6 +262,9 @@ class CADMainWindow(QMainWindow):
 
         sketch_toolbar = QToolBar("Sketch Toolbar")
         self.addToolBar(Qt.ToolBarArea.RightToolBarArea, sketch_toolbar)
+        
+        self.view_menu.addSeparator()
+        self.view_menu.addAction(sketch_toolbar.toggleViewAction())
         
         sketch_toolbar.addWidget(QLabel(" Sketch: "))
         self.plane_btns = {}
@@ -312,10 +316,13 @@ class CADMainWindow(QMainWindow):
         self.right_dock.setWidget(tools_widget)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.right_dock)
         self.right_dock.show()
+        
+        self.view_menu.addAction(self.right_dock.toggleViewAction())
 
     def init_tree_view(self):
         self.dock = QDockWidget("Specification Tree", self)
         self.dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.view_menu.addAction(self.dock.toggleViewAction())
 
         self.tree_view = QTreeView()
         self.tree_model = QStandardItemModel()
