@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTreeView, QDockWidget, QToolBar, QMenu, QMenuBar, QStatusBar,
     QInputDialog, QMessageBox, QLabel, QComboBox, QFileDialog,
-    QDialog, QDoubleSpinBox, QPushButton, QFrame, QRadioButton
+    QDialog, QDoubleSpinBox, QPushButton, QFrame, QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QStandardItemModel, QStandardItem
@@ -131,9 +131,9 @@ class CADMainWindow(QMainWindow):
         self.resize(1200, 800)
 
         self.modeler = CADModeler()
-        self.current_plane = "XY"
-
-        # Set up UI components
+        self.part_body = None
+        self.current_plane = "XYZ"
+        self.operations = []
         self.init_viewport()
         self.init_menu()
         self.init_tree_view()
@@ -315,10 +315,15 @@ class CADMainWindow(QMainWindow):
         
         plane_layout = QVBoxLayout()
         plane_layout.addWidget(QLabel("Sketch:"))
+        
+        self.plane_group = QButtonGroup(self)
+        
         self.plane_btns = {}
-        for p in ["XY", "YZ", "ZX", "Face"]:
+        planes = ["XYZ", "XY", "YZ", "ZX", "Face"]
+        
+        for p in planes:
             btn = PlaneButton(p, self.on_plane_changed)
-            if p == "XY":
+            if p == "XYZ":
                 btn.is_active = True
                 btn.update_style()
             self.plane_btns[p] = btn
@@ -336,10 +341,9 @@ class CADMainWindow(QMainWindow):
         
         active_tool_css = """
         QToolButton:checked {
-            font-weight: bold;
             color: #0044cc;
             background-color: #e0e0e0;
-            border: 1px solid #0044cc;
+            border: 2px solid #0044cc;
             border-radius: 3px;
         }
         """
@@ -735,9 +739,12 @@ class CADMainWindow(QMainWindow):
     def get_plane_param(self):
         if self.current_plane == "Face":
             if not getattr(self, 'selected_sketch_face_pt', None):
-                QMessageBox.warning(self, "안내", "스케치할 면(Face)을 3D 뷰어에서 먼저 클릭하여 지정해주세요.")
+                QMessageBox.warning(self, "안내", "스케치할 면(Face)을 3D 화면에서 먼저 클릭하여 선택해주세요.")
                 return None
             return {"type": "Face", "point": self.selected_sketch_face_pt}
+        elif self.current_plane == "XYZ":
+            QMessageBox.warning(self, "안내", "XYZ 좌표계는 3D 뷰잉 모드입니다.\n스케치를 하려면 먼저 XY, YZ, ZX 또는 Face 평면을 선택해주세요.")
+            return None
         return self.current_plane
 
     def cmd_rect(self):
@@ -745,38 +752,30 @@ class CADMainWindow(QMainWindow):
         if not plane_param: return
         self.set_active_tool(self.action_rect)
         
-        def show_dialogs():
-            w, ok1 = QInputDialog.getDouble(self, "Sketch Rectangle", "Width (X):", 10.0, 0.1, 1000.0, 2)
-            if ok1:
-                h, ok2 = QInputDialog.getDouble(self, "Sketch Rectangle", "Height (Y):", 10.0, 0.1, 1000.0, 2)
-                if ok2:
-                    self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
-                    self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
-                    self.modeler.rebuild()
-                    self.update_view()
-                    self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
-            self.set_active_tool(None)
-            
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(50, show_dialogs)
+        w, ok1 = QInputDialog.getDouble(None, "Sketch Rectangle", "Width (X):", 10.0, 0.1, 1000.0, 2)
+        if ok1:
+            h, ok2 = QInputDialog.getDouble(None, "Sketch Rectangle", "Height (Y):", 10.0, 0.1, 1000.0, 2)
+            if ok2:
+                self.modeler.add_operation("sketch_rect", width=w, height=h, plane=plane_param)
+                self.update_tree(f"Sketch (Rect {w}x{h} on {self.current_plane})")
+                self.modeler.rebuild()
+                self.update_view()
+                self.set_help(f"방금 {self.current_plane} 평면에 사각형 스케치({w}x{h})를 생성했습니다.")
+        self.set_active_tool(None)
 
     def cmd_circle(self):
         plane_param = self.get_plane_param()
         if not plane_param: return
         self.set_active_tool(self.action_circle)
         
-        def show_dialog():
-            r, ok = QInputDialog.getDouble(self, "Sketch Circle", "Radius:", 5.0, 0.1, 1000.0, 2)
-            if ok:
-                self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
-                self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
-                self.modeler.rebuild()
-                self.update_view()
-                self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원 스케치를 생성했습니다.")
-            self.set_active_tool(None)
-            
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(50, show_dialog)
+        r, ok = QInputDialog.getDouble(None, "Sketch Circle", "Radius:", 5.0, 0.1, 1000.0, 2)
+        if ok:
+            self.modeler.add_operation("sketch_circle", radius=r, plane=plane_param)
+            self.update_tree(f"Sketch (Circle R={r} on {self.current_plane})")
+            self.modeler.rebuild()
+            self.update_view()
+            self.set_help(f"방금 {self.current_plane} 평면에 반지름 {r}mm 원 스케치를 생성했습니다.")
+        self.set_active_tool(None)
             
     def cmd_line(self):
         plane_param = self.get_plane_param()
@@ -867,7 +866,7 @@ class CADMainWindow(QMainWindow):
 
     def cmd_fillet(self):
         self.set_active_tool(self.action_fillet)
-        r, ok = QInputDialog.getDouble(self, "Edge Fillet", "Radius:", 2.0, 0.1, 1000.0, 2)
+        r, ok = QInputDialog.getDouble(None, "Edge Fillet", "Radius:", 2.0, 0.1, 1000.0, 2)
         if ok:
             if getattr(self, 'selected_points', []):
                 self.modeler.add_operation("fillet", radius=r, points=self.selected_points.copy())
@@ -881,7 +880,7 @@ class CADMainWindow(QMainWindow):
                 self.set_help(f"라운드(R={r})를 적용할 선(Edge)을 화면에서 클릭하세요.")
             
     def cmd_chamfer(self):
-        d, ok = QInputDialog.getDouble(self, "Chamfer", "Distance:", 2.0, 0.1, 1000.0, 2)
+        d, ok = QInputDialog.getDouble(None, "Chamfer", "Distance:", 2.0, 0.1, 1000.0, 2)
         if ok:
             if getattr(self, 'selected_points', []):
                 self.modeler.add_operation("chamfer", distance=d, points=self.selected_points.copy())
