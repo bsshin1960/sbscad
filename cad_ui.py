@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTreeView, QDockWidget, QToolBar, QMenu, QMenuBar, QStatusBar,
     QInputDialog, QMessageBox, QLabel, QComboBox, QFileDialog,
-    QDialog, QDoubleSpinBox, QPushButton, QFrame
+    QDialog, QDoubleSpinBox, QPushButton, QFrame, QRadioButton
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QStandardItemModel, QStandardItem
@@ -44,6 +44,26 @@ class PlaneButton(QWidget):
             
     def mousePressEvent(self, event):
         self.callback(self.text_val)
+
+class SelectionModeWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.btn_edge = QRadioButton("Edge")
+        self.btn_face = QRadioButton("Face")
+        self.btn_edge.setChecked(True)
+        layout.addWidget(self.btn_edge)
+        layout.addWidget(self.btn_face)
+        
+    def currentText(self):
+        return "Face" if self.btn_face.isChecked() else "Edge"
+        
+    def setCurrentText(self, text):
+        if text == "Face":
+            self.btn_face.setChecked(True)
+        else:
+            self.btn_edge.setChecked(True)
 
 class InteractivePadDialog(QDialog):
     def __init__(self, parent=None, initial_distance=10.0, callback=None, on_ok=None, on_cancel=None):
@@ -275,7 +295,7 @@ class CADMainWindow(QMainWindow):
         # --- Sketch Plane & Selection Area ---
         top_layout = QVBoxLayout()
         
-        plane_layout = QHBoxLayout()
+        plane_layout = QVBoxLayout()
         plane_layout.addWidget(QLabel("Sketch:"))
         self.plane_btns = {}
         for p in ["XY", "YZ", "ZX", "Face"]:
@@ -287,12 +307,10 @@ class CADMainWindow(QMainWindow):
             plane_layout.addWidget(btn)
         top_layout.addLayout(plane_layout)
         
-        sel_layout = QHBoxLayout()
+        sel_layout = QVBoxLayout()
         sel_layout.addWidget(QLabel("Selection:"))
-        self.selection_mode_combo = QComboBox()
-        self.selection_mode_combo.addItems(["Edge", "Face"])
+        self.selection_mode_combo = SelectionModeWidget()
         sel_layout.addWidget(self.selection_mode_combo)
-        sel_layout.addStretch()
         top_layout.addLayout(sel_layout)
         
         dock_layout.addLayout(top_layout)
