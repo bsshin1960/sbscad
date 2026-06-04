@@ -408,11 +408,15 @@ class CADMainWindow(QMainWindow):
         self.action_trim_nearest = QAction("Trim Nearest", self)
         self.action_trim_nearest.setCheckable(True)
         self.action_trim_nearest.triggered.connect(self.cmd_trim_nearest)
+        
+        self.action_erase = QAction("Erase", self)
+        self.action_erase.setCheckable(True)
+        self.action_erase.triggered.connect(self.cmd_erase)
 
         self.tool_actions = [
             self.action_line, self.action_circle, self.action_rect,
             self.action_pad, self.action_extrucut, self.action_revolve, self.action_revolcut, self.action_fillet, self.action_chamfer,
-            self.action_trim_nearest
+            self.action_trim_nearest, self.action_erase
         ]
 
         menubar = self.menuBar()
@@ -467,6 +471,7 @@ class CADMainWindow(QMainWindow):
 
         trim_menu = edit_menu.addMenu("Trim")
         trim_menu.addAction(self.action_trim_nearest)
+        trim_menu.addAction(self.action_erase)
 
         insert_menu = menubar.addMenu("Insert")
         
@@ -554,14 +559,15 @@ class CADMainWindow(QMainWindow):
         
         active_tool_css = """
         QToolButton {
-            border: 2px solid transparent;
-            border-radius: 3px;
+            border: none;
+            background: transparent;
+            font-weight: normal;
         }
         QToolButton:checked {
             color: #0044cc;
-            background-color: #e0e0e0;
-            border: 2px solid #0044cc;
-            border-radius: 3px;
+            font-weight: bold;
+            border: none;
+            background: transparent;
         }
         """
         
@@ -594,6 +600,7 @@ class CADMainWindow(QMainWindow):
         edit_dock_toolbar.setStyleSheet(active_tool_css)
         edit_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
         edit_dock_toolbar.addAction(self.action_trim_nearest)
+        edit_dock_toolbar.addAction(self.action_erase)
         edit_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         dock_layout.addWidget(edit_dock_toolbar)
         
@@ -736,6 +743,7 @@ class CADMainWindow(QMainWindow):
         
         if not is_ctrl:
             self.selected_points = []
+            self.selected_edge_points_cache = []
             for f in getattr(self, 'selected_faces_stls', []):
                 if os.path.exists(f): os.unlink(f)
             self.selected_faces_stls = []
@@ -744,14 +752,14 @@ class CADMainWindow(QMainWindow):
         mode = self.selection_mode_combo.currentText()
         
         if mode == "Edge":
-            self.selected_points.append(pt)
-            all_edge_points = []
-            for p in self.selected_points:
-                edge_pts = self.modeler.get_nearest_edge_points(p)
-                if edge_pts:
-                    all_edge_points.append(edge_pts)
-            if all_edge_points:
-                self.viewport.highlight_edges(all_edge_points)
+            edge_pts = self.modeler.get_nearest_edge_points(pt)
+            if edge_pts:
+                self.selected_points.append(pt)
+                if not hasattr(self, 'selected_edge_points_cache'):
+                    self.selected_edge_points_cache = []
+                self.selected_edge_points_cache.append(edge_pts)
+                
+                self.viewport.highlight_edges(self.selected_edge_points_cache)
                 self.set_help(f"총 {len(self.selected_points)}개의 선이 선택되었습니다.")
                 
                 # If there's a pending operation, apply it immediately
@@ -762,12 +770,14 @@ class CADMainWindow(QMainWindow):
                         self.modeler.add_operation("fillet", radius=op["radius"], points=self.selected_points.copy())
                         self.update_tree(f"EdgeFillet (R={op['radius']})")
                         self.selected_points = []
+                        self.selected_edge_points_cache = []
                         self.update_view()
                         self.set_help(f"방금 라운드(R={op['radius']})를 실행했습니다.")
                     elif op["type"] == "chamfer":
                         self.modeler.add_operation("chamfer", distance=op["distance"], points=self.selected_points.copy())
                         self.update_tree(f"Chamfer (D={op['distance']})")
                         self.selected_points = []
+                        self.selected_edge_points_cache = []
                         self.update_view()
                         self.set_help(f"방금 모따기(D={op['distance']})를 실행했습니다.")
                     self.set_active_tool(None)
@@ -874,7 +884,7 @@ class CADMainWindow(QMainWindow):
             self.set_help("먼저 스케치 평면을 선택해주세요 (Top/Front/Right).")
             return
             
-        self.set_active_tool(None)
+        self.set_active_tool(self.action_trim_nearest)
         self.set_help("자를 선을 클릭하세요. 우클릭 시 취소됩니다.")
         
         def on_trim_click(pt):
@@ -904,10 +914,49 @@ class CADMainWindow(QMainWindow):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.set_help(f"오류가 발생했습니다: {e}")
-                self.viewport.enable_interactive_trim(on_trim_click)
+                self.set_active_tool(None)
                 
         self.viewport.enable_interactive_trim(on_trim_click)
+
+    def cmd_erase(self):
+        if not self.current_plane:
+            self.set_help("먼저 스케치 평면을 선택해주세요 (Top/Front/Right).")
+            return
+            
+        self.set_active_tool(self.action_erase)
+        self.set_help("지울 선이나 곡선을 클릭하세요. 우클릭 시 취소됩니다.")
+        
+        def on_erase_click(pt):
+            if pt is None:
+                self.set_help("지우기가 취소되었습니다.")
+                self.set_active_tool(None)
+                return
+                
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: process_erase(pt))
+            
+        def process_erase(pt):
+            try:
+                # Disable picking before geometry changes
+                self.viewport.disable_interactive_trim()
+                
+                # Modify geometry
+                success = self.modeler.erase_sketch_element(pt)
+                if success:
+                    self.update_view()
+                    self.update_tree("Erase (Removed Operation)")
+                    self.set_help("스케치 요소가 성공적으로 지워졌습니다. 계속 지우려면 선을 다시 클릭하세요.")
+                else:
+                    self.set_help("근처에 지울 요소가 없습니다. 다시 클릭하세요.")
+                
+                # Re-enable picking for the next erase
+                self.viewport.enable_interactive_trim(on_erase_click)
+            except Exception as e:
+                print("Erase error:", e)
+                self.set_help("지우기 중 오류가 발생했습니다.")
+                self.set_active_tool(None)
+
+        self.viewport.enable_interactive_trim(on_erase_click)
 
     def cmd_undo(self):
         op = self.modeler.undo()

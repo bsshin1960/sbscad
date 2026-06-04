@@ -53,6 +53,7 @@ class CADModeler:
         self.operations = []
         self.redo_stack = []
         self.result_shape = None
+        self.sketch_op_edges = {}
         
     def add_operation(self, op_type, **kwargs):
         self.operations.append({"type": op_type, "params": kwargs})
@@ -97,8 +98,9 @@ class CADModeler:
             return False
             
     def rebuild(self):
+        self.result_shape = None
+        self.sketch_op_edges = {}
         if not self.operations:
-            self.result_shape = None
             return
 
         current_wp = None
@@ -107,7 +109,7 @@ class CADModeler:
         current_plane = "XY"
         rebuild_success = True
         
-        for op in self.operations:
+        for op_idx, op in enumerate(self.operations):
             t = op["type"]
             p = op["params"]
             prev_wp = current_wp
@@ -124,10 +126,23 @@ class CADModeler:
                         current_plane = "Face"
                     else:
                         if current_wp is None or last_op_was_3d or current_plane != plane:
-                            current_wp = cq.Workplane(plane, obj=current_wp.val() if has_3d else None)
+                            obj_to_pass = None
+                            if has_3d and current_wp is not None:
+                                try:
+                                    solid = current_wp.findSolid()
+                                    if solid:
+                                        obj_to_pass = solid
+                                    else:
+                                        obj_to_pass = current_wp.val()
+                                except:
+                                    obj_to_pass = current_wp.val()
+                            current_wp = cq.Workplane(plane, obj=obj_to_pass)
                         current_plane = plane
                         
                     last_op_was_3d = False
+
+                prev_edge_count = len(current_wp.ctx.pendingEdges) if current_wp and current_wp.ctx else 0
+                prev_wire_count = len(current_wp.ctx.pendingWires) if current_wp and current_wp.ctx and hasattr(current_wp.ctx, 'pendingWires') else 0
 
                 # --- Sketching ---
                 if t == "sketch_rect":
@@ -149,6 +164,17 @@ class CADModeler:
                             current_wp = current_wp.moveTo(local_pts[0][0], local_pts[0][1])
                             for pt in local_pts[1:]:
                                 current_wp = current_wp.lineTo(pt[0], pt[1])
+                                
+                if current_wp and current_wp.ctx and t.startswith("sketch_"):
+                    new_edges = []
+                    new_edges.extend(current_wp.ctx.pendingEdges[prev_edge_count:])
+                    if hasattr(current_wp.ctx, 'pendingWires'):
+                        for w in current_wp.ctx.pendingWires[prev_wire_count:]:
+                            try:
+                                new_edges.extend(w.Edges())
+                            except:
+                                pass
+                    self.sketch_op_edges[op_idx] = new_edges
                 
                 # --- 3D Features ---
                 elif t == "pad":
@@ -233,16 +259,19 @@ class CADModeler:
 
     def get_shape_stl(self, filepath):
         if self.result_shape:
+            try:
+                solid = self.result_shape.findSolid()
+                if solid:
+                    cq.exporters.export(solid, filepath, 'STL')
+                    return True
+            except:
+                pass
             cq.exporters.export(self.result_shape.val(), filepath, 'STL')
             return True
         return False
             
     def export_stl(self, filepath):
-        if self.result_shape:
-            # cadquery exporter
-            cq.exporters.export(self.result_shape.val(), filepath, 'STL')
-            return True
-        return False
+        return self.get_shape_stl(filepath)
         
     def import_step(self, filepath):
         try:
@@ -270,8 +299,11 @@ class CADModeler:
         try:
             if not self.result_shape:
                 return []
-            import numpy as np
-            nearest_edge = self.result_shape.edges(CustomNearestEdgeSelector(point)).val()
+            try:
+                import numpy as np
+                nearest_edge = self.result_shape.edges(CustomNearestEdgeSelector(point)).val()
+            except Exception:
+                return []
             if not nearest_edge:
                 return []
             
@@ -288,7 +320,10 @@ class CADModeler:
         try:
             if not self.result_shape:
                 return False
-            face = self.result_shape.faces(cq.selectors.NearestToPointSelector(point)).val()
+            try:
+                face = self.result_shape.faces(cq.selectors.NearestToPointSelector(point)).val()
+            except Exception:
+                return False
             if not face:
                 return False
             cq.exporters.export(face, out_filepath, 'STL')
@@ -300,7 +335,10 @@ class CADModeler:
     def get_face_normal_and_center(self, point):
         try:
             if not self.result_shape: return None, None
-            face = self.result_shape.faces(cq.selectors.NearestToPointSelector(point)).val()
+            try:
+                face = self.result_shape.faces(cq.selectors.NearestToPointSelector(point)).val()
+            except Exception:
+                return None, None
             if not face: return None, None
             
             geom_type = face.geomType()
@@ -401,6 +439,35 @@ class CADModeler:
         self.rebuild()
         return True
 
+    def erase_sketch_element(self, click_pt):
+        import numpy as np
+        if not hasattr(self, 'sketch_op_edges') or not self.sketch_op_edges:
+            return False
+            
+        click_np = np.array(click_pt)
+        min_dist = float('inf')
+        target_op_idx = -1
+        
+        for op_idx, edges in self.sketch_op_edges.items():
+            for e in edges:
+                try:
+                    pts = [e.positionAt(t) for t in np.linspace(0, 1, 30)]
+                    for pt in pts:
+                        d = np.linalg.norm(np.array([pt.x, pt.y, pt.z]) - click_np)
+                        if d < min_dist:
+                            min_dist = d
+                            target_op_idx = op_idx
+                except:
+                    pass
+                    
+        if target_op_idx != -1 and min_dist < 5.0:
+            self.operations.pop(target_op_idx)
+            self.redo_stack = []
+            self.rebuild()
+            return True
+            
+        return False
+
     def get_all_edges_points(self):
         try:
             if not self.result_shape:
@@ -422,10 +489,28 @@ class CADModeler:
                     
             for e in all_edges:
                 pts = []
-                for t in np.linspace(0, 1, 100):
-                    pt = e.positionAt(t)
-                    pts.append((pt.x, pt.y, pt.z))
-                points_list.append(pts)
+                geom_type = None
+                try:
+                    geom_type = e.geomType()
+                except:
+                    pass
+                
+                if geom_type == "LINE":
+                    try:
+                        pt1 = e.positionAt(0.0)
+                        pt2 = e.positionAt(1.0)
+                        pts = [(pt1.x, pt1.y, pt1.z), (pt2.x, pt2.y, pt2.z)]
+                    except:
+                        pass
+                else:
+                    for t in np.linspace(0, 1, 30):
+                        try:
+                            pt = e.positionAt(t)
+                            pts.append((pt.x, pt.y, pt.z))
+                        except:
+                            pass
+                if pts:
+                    points_list.append(pts)
             return points_list
         except Exception as e:
             print("GetAllEdges Error:", e)

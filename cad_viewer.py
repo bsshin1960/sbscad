@@ -391,6 +391,7 @@ class CADViewer(QWidget):
         self.highlighted_actor_names = []
         
         import pyvista as pv
+        import os
         for i, stl_path in enumerate(face_stl_paths):
             if stl_path:
                 try:
@@ -403,4 +404,10 @@ class CADViewer(QWidget):
                     self.highlighted_actor_names.append(name)
                 except Exception as e:
                     print(f"Failed to load face STL {stl_path}: {e}")
+                finally:
+                    if os.path.exists(stl_path):
+                        try:
+                            os.unlink(stl_path)
+                        except:
+                            pass
         self.plotter.render()
