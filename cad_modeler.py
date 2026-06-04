@@ -105,6 +105,7 @@ class CADModeler:
         has_3d = False
         last_op_was_3d = False
         current_plane = "XY"
+        rebuild_success = True
         
         for op in self.operations:
             t = op["type"]
@@ -151,6 +152,11 @@ class CADModeler:
                 
                 # --- 3D Features ---
                 elif t == "pad":
+                    if hasattr(current_wp.ctx, "pendingEdges") and len(current_wp.ctx.pendingEdges) > 0:
+                        try:
+                            current_wp = current_wp.wire()
+                        except Exception as e:
+                            print("Warning: could not assemble wire:", e)
                     current_wp = current_wp.extrude(p["distance"])
                     has_3d = True
                     last_op_was_3d = True
@@ -180,9 +186,11 @@ class CADModeler:
             except Exception as e:
                 print(f"Rebuild Error on '{t}': {e}")
                 current_wp = prev_wp # Rollback failed operation
+                rebuild_success = False
 
         self.last_wp = current_wp
         self.result_shape = current_wp
+        return rebuild_success
 
     def get_active_plane_transform(self):
         if hasattr(self, 'last_wp') and self.last_wp and self.last_wp.plane:

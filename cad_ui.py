@@ -779,7 +779,14 @@ class CADMainWindow(QMainWindow):
         self.set_active_tool(self.action_pad)
         initial_distance = 10.0
         self.modeler.add_operation("pad", distance=initial_distance)
-        self.modeler.rebuild()
+        success = self.modeler.rebuild()
+        if not success:
+            self.set_help("오류: 닫힌 형상(Close Line)이 아니거나 스케치가 유효하지 않습니다.")
+            self.modeler.undo()
+            self.update_view()
+            self.set_active_tool(None)
+            return
+            
         self.update_view()
         
         center, normal = self.modeler.get_active_plane_transform()
