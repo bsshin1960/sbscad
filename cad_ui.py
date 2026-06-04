@@ -219,6 +219,10 @@ class CADMainWindow(QMainWindow):
         export_step_action.triggered.connect(self.cmd_export_step)
         export_menu.addAction(export_step_action)
         
+        export_snapshot_action = QAction("Snapshot (Image)", self)
+        export_snapshot_action.triggered.connect(self.cmd_export_snapshot)
+        export_menu.addAction(export_snapshot_action)
+        
         close_action = QAction("Close", self)
         close_action.triggered.connect(self.cmd_close)
         file_menu.addAction(close_action)
@@ -649,6 +653,15 @@ class CADMainWindow(QMainWindow):
                 self.set_help("STEP 파일이 성공적으로 저장되었습니다.")
             else:
                 QMessageBox.warning(self, "오류", "STEP 파일 저장에 실패했습니다. 모델이 있는지 확인하세요.")
+
+    def cmd_export_snapshot(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Snapshot", "", "PNG Image (*.png);;JPEG Image (*.jpg);;BMP Image (*.bmp)")
+        if file_path:
+            try:
+                self.viewport.plotter.screenshot(file_path)
+                self.set_help(f"스냅샷이 저장되었습니다: {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"스냅샷 저장에 실패했습니다:\n{str(e)}")
 
     def get_plane_param(self):
         if self.current_plane == "Face":
