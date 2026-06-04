@@ -156,17 +156,9 @@ class CADMainWindow(QMainWindow):
         self.help_label.setText(msg)
 
     def set_active_tool(self, active_action=None):
-        from PyQt6.QtWidgets import QToolBar
         for action in self.tool_actions:
-            font = action.font()
-            font.setBold(action == active_action)
-            action.setFont(font)
-            
-            # Update the toolbar buttons directly since Qt sometimes ignores action font updates
-            for tb in self.findChildren(QToolBar):
-                widget = tb.widgetForAction(action)
-                if widget:
-                    widget.setFont(font)
+            if action.isCheckable():
+                action.setChecked(action == active_action)
             
         # If we switch to another tool or clear tools, cancel any pending interactive operations
         if hasattr(self, 'pending_operation') and self.pending_operation:
@@ -184,19 +176,26 @@ class CADMainWindow(QMainWindow):
 
     def init_menu(self):
         self.action_line = QAction("Line", self)
+        self.action_line.setCheckable(True)
         self.action_line.triggered.connect(self.cmd_line)
         self.action_circle = QAction("Circle", self)
+        self.action_circle.setCheckable(True)
         self.action_circle.triggered.connect(self.cmd_circle)
         self.action_rect = QAction("Rectangle", self)
+        self.action_rect.setCheckable(True)
         self.action_rect.triggered.connect(self.cmd_rect)
         
         self.action_pad = QAction("Extrude", self)
+        self.action_pad.setCheckable(True)
         self.action_pad.triggered.connect(self.cmd_pad)
         self.action_revolve = QAction("Revolve", self)
+        self.action_revolve.setCheckable(True)
         self.action_revolve.triggered.connect(self.cmd_revolve)
         self.action_fillet = QAction("Round", self)
+        self.action_fillet.setCheckable(True)
         self.action_fillet.triggered.connect(self.cmd_fillet)
         self.action_chamfer = QAction("Chamfer", self)
+        self.action_chamfer.setCheckable(True)
         self.action_chamfer.triggered.connect(self.cmd_chamfer)
 
         self.tool_actions = [
@@ -335,7 +334,18 @@ class CADMainWindow(QMainWindow):
         dock_layout.addLayout(top_layout)
         dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
         
+        active_tool_css = """
+        QToolButton:checked {
+            font-weight: bold;
+            color: #0044cc;
+            background-color: #e0e0e0;
+            border: 1px solid #0044cc;
+            border-radius: 3px;
+        }
+        """
+        
         sketch_dock_toolbar = QToolBar("Sketch")
+        sketch_dock_toolbar.setStyleSheet(active_tool_css)
         sketch_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
         sketch_dock_toolbar.addAction(self.action_line)
         sketch_dock_toolbar.addAction(self.action_circle)
@@ -345,14 +355,15 @@ class CADMainWindow(QMainWindow):
         
         dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
         
-        pad_dock_toolbar = QToolBar("Solid")
-        pad_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
-        pad_dock_toolbar.addAction(self.action_pad)
-        pad_dock_toolbar.addAction(self.action_revolve)
-        pad_dock_toolbar.addAction(self.action_fillet)
-        pad_dock_toolbar.addAction(self.action_chamfer)
-        pad_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        dock_layout.addWidget(pad_dock_toolbar)
+        feat_dock_toolbar = QToolBar("Feature")
+        feat_dock_toolbar.setStyleSheet(active_tool_css)
+        feat_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
+        feat_dock_toolbar.addAction(self.action_pad)
+        feat_dock_toolbar.addAction(self.action_revolve)
+        feat_dock_toolbar.addAction(self.action_fillet)
+        feat_dock_toolbar.addAction(self.action_chamfer)
+        feat_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        dock_layout.addWidget(feat_dock_toolbar)
         
         self.right_dock.setWidget(tools_widget)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.right_dock)
