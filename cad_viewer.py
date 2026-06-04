@@ -197,17 +197,18 @@ class CADViewer(QWidget):
     def _on_sketch_line_keypress(self, obj, event):
         key = self.plotter.iren.interactor.GetKeySym()
         if key == "Escape":
+            cb = self.sketch_line_callback
             if len(self.sketch_line_pts) >= 2:
                 pts = list(self.sketch_line_pts)
                 self.disable_interactive_sketch_line()
-                if self.sketch_line_callback:
-                    self.sketch_line_callback(pts)
+                if cb:
+                    cb(pts)
             else:
                 self.disable_interactive_sketch_line()
                 # Also reset the bold font on UI since we cancelled
-                if self.sketch_line_callback:
+                if cb:
                     # Pass empty list to indicate cancellation
-                    self.sketch_line_callback([])
+                    cb([])
 
     def _on_sketch_line_press(self, obj, event):
         click_pos = self.plotter.iren.get_event_position()
@@ -216,15 +217,16 @@ class CADViewer(QWidget):
         
         # Right click to finish
         if event == "RightButtonPressEvent":
+            cb = self.sketch_line_callback
             if len(self.sketch_line_pts) >= 2:
                 pts = list(self.sketch_line_pts)
                 self.disable_interactive_sketch_line()
-                if self.sketch_line_callback:
-                    self.sketch_line_callback(pts)
+                if cb:
+                    cb(pts)
             else:
                 self.disable_interactive_sketch_line()
-                if self.sketch_line_callback:
-                    self.sketch_line_callback([])
+                if cb:
+                    cb([])
             return
             
         import pyvista as pv
