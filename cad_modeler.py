@@ -273,6 +273,94 @@ class CADModeler:
             print("Normal error:", e)
             return None, None
             
+    def trim_sketch_nearest(self, click_pt):
+        import numpy as np
+        def distance_point_to_segment(p, a, b):
+            p = np.array(p); a = np.array(a); b = np.array(b)
+            ab = b - a
+            ab_sq = np.dot(ab, ab)
+            if ab_sq == 0: return np.linalg.norm(p - a), 0
+            t = np.dot(p - a, ab) / ab_sq
+            t = max(0, min(1, t))
+            proj = a + t * ab
+            return np.linalg.norm(p - proj), t
+
+        def line_intersection(p1, p2, p3, p4):
+            x1, y1 = p1[:2]; x2, y2 = p2[:2]
+            x3, y3 = p3[:2]; x4, y4 = p4[:2]
+            denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
+            if abs(denom) < 1e-8: return None, None
+            t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / denom
+            u = ((x1-x3)*(y1-y2) - (y1-y3)*(x1-x2)) / denom
+            if -1e-6 <= t <= 1+1e-6 and -1e-6 <= u <= 1+1e-6:
+                return (x1 + t*(x2-x1), y1 + t*(y2-y1), p1[2]), t
+            return None, None
+
+        segments = []
+        for op_idx, op in enumerate(self.operations):
+            if op["type"] == "sketch_line" and "points" in op["params"]:
+                pts = op["params"]["points"]
+                for i in range(len(pts) - 1):
+                    segments.append({
+                        "op_idx": op_idx, "seg_idx": i,
+                        "p1": pts[i], "p2": pts[i+1], "plane": op["params"]["plane"]
+                    })
+        
+        min_dist = float('inf')
+        target_seg = None
+        target_t = 0
+        for seg in segments:
+            dist, t = distance_point_to_segment(click_pt, seg["p1"], seg["p2"])
+            if dist < min_dist:
+                min_dist = dist
+                target_seg = seg
+                target_t = t
+                
+        if not target_seg or min_dist > 5.0:
+            return False # Nothing to trim
+
+        t_intersections = []
+        for seg in segments:
+            if seg == target_seg or seg["plane"] != target_seg["plane"]:
+                continue
+            pt, t_int = line_intersection(target_seg["p1"], target_seg["p2"], seg["p1"], seg["p2"])
+            if pt is not None:
+                t_intersections.append((t_int, pt))
+                
+        t_min, t_max = 0.0, 1.0
+        for t_int, pt in t_intersections:
+            if t_int < target_t and t_int > t_min: t_min = t_int
+            if t_int > target_t and t_int < t_max: t_max = t_int
+            
+        p1, p2 = np.array(target_seg["p1"]), np.array(target_seg["p2"])
+        pt_min = tuple(p1 + t_min * (p2 - p1))
+        pt_max = tuple(p1 + t_max * (p2 - p1))
+        
+        new_ops = []
+        for i, op in enumerate(self.operations):
+            if i == target_seg["op_idx"]:
+                pts = op["params"]["points"]
+                seg_i = target_seg["seg_idx"]
+                
+                pts1 = pts[:seg_i+1] + [pt_min]
+                if np.linalg.norm(np.array(pts1[-1]) - np.array(pts1[-2])) > 1e-5:
+                    new_ops.append({"type": op["type"], "params": {"plane": op["params"]["plane"], "points": [tuple(map(float, x)) for x in pts1]}})
+                elif len(pts1) > 2:
+                    new_ops.append({"type": op["type"], "params": {"plane": op["params"]["plane"], "points": [tuple(map(float, x)) for x in pts1[:-1]]}})
+                    
+                pts2 = [pt_max] + pts[seg_i+1:]
+                if np.linalg.norm(np.array(pts2[0]) - np.array(pts2[1])) > 1e-5:
+                    new_ops.append({"type": op["type"], "params": {"plane": op["params"]["plane"], "points": [tuple(map(float, x)) for x in pts2]}})
+                elif len(pts2) > 2:
+                    new_ops.append({"type": op["type"], "params": {"plane": op["params"]["plane"], "points": [tuple(map(float, x)) for x in pts2[1:]]}})
+            else:
+                new_ops.append(op)
+                
+        self.operations = new_ops
+        self.redo_stack = []
+        self.rebuild()
+        return True
+
     def get_all_edges_points(self):
         try:
             if not self.result_shape:

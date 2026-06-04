@@ -171,6 +171,10 @@ class CADMainWindow(QMainWindow):
             if self.viewport.sketch_line_callback is not None:
                 self.viewport.disable_interactive_sketch_line()
 
+        # Cancel interactive trim
+        if hasattr(self.viewport, 'disable_interactive_trim') and getattr(self.viewport, 'trim_callback', None):
+            self.viewport.disable_interactive_trim()
+
     def init_menu(self):
         self.action_line = QAction("Line", self)
         self.action_line.triggered.connect(self.cmd_line)
@@ -242,6 +246,11 @@ class CADMainWindow(QMainWindow):
         action_redo.setShortcut("Ctrl+Y")
         action_redo.triggered.connect(self.cmd_redo)
         edit_menu.addAction(action_redo)
+
+        trim_menu = edit_menu.addMenu("Trim")
+        action_trim_nearest = QAction("Trim Nearest", self)
+        action_trim_nearest.triggered.connect(self.cmd_trim_nearest)
+        trim_menu.addAction(action_trim_nearest)
 
         insert_menu = menubar.addMenu("Insert")
         
@@ -604,6 +613,30 @@ class CADMainWindow(QMainWindow):
         while self.part_body.rowCount() > 1:
             self.part_body.removeRow(1)
         self.set_help("현재 모델을 닫았습니다.")
+
+    def cmd_trim_nearest(self):
+        if not self.current_plane:
+            self.set_help("먼저 스케치 평면을 선택해주세요 (Top/Front/Right).")
+            return
+            
+        self.set_active_tool(None)
+        self.set_help("자를 선을 클릭하세요. 우클릭 시 취소됩니다.")
+        
+        def on_trim_click(pt):
+            if pt is None:
+                self.set_help("자르기가 취소되었습니다.")
+                self.set_active_tool(None)
+                return
+                
+            success = self.modeler.trim_sketch_nearest(pt)
+            if success:
+                self.update_tree("Trim (Nearest)")
+                self.update_view()
+                self.set_help("선이 잘렸습니다. 계속해서 자를 선을 클릭하세요.")
+            else:
+                self.set_help("클릭한 위치 근처에 자를 선이 없습니다.")
+                
+        self.viewport.enable_interactive_trim(on_trim_click)
 
     def cmd_undo(self):
         op = self.modeler.undo()

@@ -111,6 +111,31 @@ class CADViewer(QWidget):
                 callback(picked_point)
         self.plotter.enable_surface_point_picking(callback=_on_pick, show_message=False, left_clicking=True, show_point=False)
 
+    def enable_interactive_trim(self, callback):
+        self.trim_callback = callback
+        
+        def _on_pick(picked_point):
+            if picked_point is not None and len(picked_point) == 3:
+                if self.trim_callback:
+                    self.trim_callback(picked_point)
+                    
+        self.plotter.enable_surface_point_picking(callback=_on_pick, show_message=False, left_clicking=True, show_point=False)
+        self._trim_right_click_observer = self.plotter.iren.add_observer("RightButtonPressEvent", self._on_trim_right_click)
+
+    def _on_trim_right_click(self, obj, event):
+        if hasattr(self, 'trim_callback'):
+            cb = self.trim_callback
+            self.disable_interactive_trim()
+            if cb:
+                cb(None)
+
+    def disable_interactive_trim(self):
+        if hasattr(self, '_trim_right_click_observer'):
+            self.plotter.iren.remove_observer(self._trim_right_click_observer)
+            del self._trim_right_click_observer
+        self.plotter.disable_picking()
+        self.trim_callback = None
+
     def enable_interactive_pad(self, center, normal, initial_distance, callback):
         import numpy as np
         self.interactive_pad_callback = callback
