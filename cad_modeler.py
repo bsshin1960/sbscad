@@ -160,8 +160,40 @@ class CADModeler:
                     current_wp = current_wp.extrude(p["distance"])
                     has_3d = True
                     last_op_was_3d = True
-                elif t == "shaft":
-                    current_wp = current_wp.revolve(360, (0,0,0), (0,1,0))
+                    
+                elif t == "extru_cut":
+                    if hasattr(current_wp.ctx, "pendingEdges") and len(current_wp.ctx.pendingEdges) > 0:
+                        try:
+                            current_wp = current_wp.wire()
+                        except Exception as e:
+                            print("Warning: could not assemble wire:", e)
+                    current_wp = current_wp.extrude(-p["distance"], combine='s')
+                    has_3d = True
+                    last_op_was_3d = True
+                    
+                elif t in ("revolve", "shaft"):
+                    if hasattr(current_wp.ctx, "pendingEdges") and len(current_wp.ctx.pendingEdges) > 0:
+                        try:
+                            current_wp = current_wp.wire()
+                        except Exception as e:
+                            print("Warning: could not assemble wire:", e)
+                    angle = p.get("angle", 360.0)
+                    axis_str = p.get("axis", "Y")
+                    axis_vec = (1,0,0) if axis_str == "X" else (0,1,0)
+                    current_wp = current_wp.revolve(angle, (0,0,0), axis_vec)
+                    has_3d = True
+                    last_op_was_3d = True
+                    
+                elif t == "revol_cut":
+                    if hasattr(current_wp.ctx, "pendingEdges") and len(current_wp.ctx.pendingEdges) > 0:
+                        try:
+                            current_wp = current_wp.wire()
+                        except Exception as e:
+                            print("Warning: could not assemble wire:", e)
+                    angle = p.get("angle", 360.0)
+                    axis_str = p.get("axis", "Y")
+                    axis_vec = (1,0,0) if axis_str == "X" else (0,1,0)
+                    current_wp = current_wp.revolve(angle, (0,0,0), axis_vec, combine='s')
                     has_3d = True
                     last_op_was_3d = True
                     

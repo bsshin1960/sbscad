@@ -65,6 +65,49 @@ class SelectionModeWidget(QWidget):
         else:
             self.btn_edge.setChecked(True)
 
+class RevolveDialog(QDialog):
+    def __init__(self, parent=None, title="Revolve", default_angle=360.0):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.angle = default_angle
+        self.axis = "Y"
+        
+        layout = QVBoxLayout(self)
+        
+        # Angle
+        angle_layout = QHBoxLayout()
+        angle_layout.addWidget(QLabel("Angle (deg):"))
+        self.angle_spin = QDoubleSpinBox()
+        self.angle_spin.setRange(0.1, 360.0)
+        self.angle_spin.setValue(self.angle)
+        angle_layout.addWidget(self.angle_spin)
+        layout.addLayout(angle_layout)
+        
+        # Axis
+        axis_layout = QHBoxLayout()
+        axis_layout.addWidget(QLabel("Axis:"))
+        self.radio_x = QRadioButton("X-Axis")
+        self.radio_y = QRadioButton("Y-Axis")
+        self.radio_y.setChecked(True)
+        axis_layout.addWidget(self.radio_x)
+        axis_layout.addWidget(self.radio_y)
+        layout.addLayout(axis_layout)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_cancel = QPushButton("Cancel")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_ok)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+        
+    def accept(self):
+        self.angle = self.angle_spin.value()
+        self.axis = "X" if self.radio_x.isChecked() else "Y"
+        super().accept()
+
 class InteractivePadDialog(QDialog):
     def __init__(self, parent=None, initial_distance=10.0, callback=None, on_ok=None, on_cancel=None):
         super().__init__(parent)
@@ -188,9 +231,15 @@ class CADMainWindow(QMainWindow):
         self.action_pad = QAction("Extrude", self)
         self.action_pad.setCheckable(True)
         self.action_pad.triggered.connect(self.cmd_pad)
+        self.action_extrucut = QAction("ExtruCut", self)
+        self.action_extrucut.setCheckable(True)
+        self.action_extrucut.triggered.connect(self.cmd_extrucut)
         self.action_revolve = QAction("Revolve", self)
         self.action_revolve.setCheckable(True)
         self.action_revolve.triggered.connect(self.cmd_revolve)
+        self.action_revolcut = QAction("RevolCut", self)
+        self.action_revolcut.setCheckable(True)
+        self.action_revolcut.triggered.connect(self.cmd_revolcut)
         self.action_fillet = QAction("Round", self)
         self.action_fillet.setCheckable(True)
         self.action_fillet.triggered.connect(self.cmd_fillet)
@@ -200,7 +249,7 @@ class CADMainWindow(QMainWindow):
 
         self.tool_actions = [
             self.action_line, self.action_circle, self.action_rect,
-            self.action_pad, self.action_revolve, self.action_fillet, self.action_chamfer
+            self.action_pad, self.action_extrucut, self.action_revolve, self.action_revolcut, self.action_fillet, self.action_chamfer
         ]
 
         menubar = self.menuBar()
@@ -340,6 +389,10 @@ class CADMainWindow(QMainWindow):
         dock_layout.addWidget(QFrame(frameShape=QFrame.Shape.HLine))
         
         active_tool_css = """
+        QToolButton {
+            border: 2px solid transparent;
+            border-radius: 3px;
+        }
         QToolButton:checked {
             color: #0044cc;
             background-color: #e0e0e0;
@@ -363,7 +416,9 @@ class CADMainWindow(QMainWindow):
         feat_dock_toolbar.setStyleSheet(active_tool_css)
         feat_dock_toolbar.setOrientation(Qt.Orientation.Vertical)
         feat_dock_toolbar.addAction(self.action_pad)
+        feat_dock_toolbar.addAction(self.action_extrucut)
         feat_dock_toolbar.addAction(self.action_revolve)
+        feat_dock_toolbar.addAction(self.action_revolcut)
         feat_dock_toolbar.addAction(self.action_fillet)
         feat_dock_toolbar.addAction(self.action_chamfer)
         feat_dock_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
@@ -856,12 +911,52 @@ class CADMainWindow(QMainWindow):
         self.viewport.enable_interactive_pad(center, normal, initial_distance, on_distance_changed)
         self.interactive_pad_dialog.show()
             
+    def cmd_extrucut(self):
+        self.set_active_tool(self.action_extrucut)
+        d, ok = QInputDialog.getDouble(None, "Extrude Cut", "Distance:", 10.0, 0.1, 1000.0, 2)
+        if ok:
+            self.modeler.add_operation("extru_cut", distance=d)
+            success = self.modeler.rebuild()
+            if not success:
+                self.set_help("오류: 유효한 스케치가 없거나 닫힌 선(Close Line)이 아닙니다.")
+                self.modeler.undo()
+                self.update_view()
+            else:
+                self.update_tree(f"ExtruCut ({d}mm)")
+                self.update_view()
+                self.set_help(f"돌출 컷({d}mm)을 적용했습니다.")
+        self.set_active_tool(None)
+
     def cmd_revolve(self):
         self.set_active_tool(self.action_revolve)
-        self.modeler.add_operation("shaft")
-        self.update_tree("Revolve (360도)")
-        self.update_view()
-        self.set_help("스케치를 회전시켜 3D 형상을 만들었습니다.")
+        dialog = RevolveDialog(self, title="Revolve")
+        if dialog.exec():
+            self.modeler.add_operation("revolve", angle=dialog.angle, axis=dialog.axis)
+            success = self.modeler.rebuild()
+            if not success:
+                self.set_help("오류: 유효한 스케치가 없거나 닫힌 선(Close Line)이 아닙니다.")
+                self.modeler.undo()
+                self.update_view()
+            else:
+                self.update_tree(f"Revolve ({dialog.axis}-Axis, {dialog.angle}deg)")
+                self.update_view()
+                self.set_help(f"스케치를 {dialog.axis}축을 중심으로 {dialog.angle}도 회전했습니다.")
+        self.set_active_tool(None)
+
+    def cmd_revolcut(self):
+        self.set_active_tool(self.action_revolcut)
+        dialog = RevolveDialog(self, title="RevolCut")
+        if dialog.exec():
+            self.modeler.add_operation("revol_cut", angle=dialog.angle, axis=dialog.axis)
+            success = self.modeler.rebuild()
+            if not success:
+                self.set_help("오류: 유효한 스케치가 없거나 닫힌 선(Close Line)이 아닙니다.")
+                self.modeler.undo()
+                self.update_view()
+            else:
+                self.update_tree(f"RevolCut ({dialog.axis}-Axis, {dialog.angle}deg)")
+                self.update_view()
+                self.set_help(f"스케치를 {dialog.axis}축을 중심으로 회전 컷({dialog.angle}도) 적용했습니다.")
         self.set_active_tool(None)
 
     def cmd_fillet(self):
